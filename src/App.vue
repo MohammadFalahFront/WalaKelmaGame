@@ -16,10 +16,10 @@ onMounted(() => {
 });
 
 const sounds = {
-  bgm: new Audio("sounds/bg-music.mp3"),
-  correct: new Audio("sounds/correct.mp3"),
-  skip: new Audio("sounds/skip.mp3"),
-  timeout: new Audio("sounds/timeout.mp3"),
+  bgm: new Audio(getPath("sounds/bg-music.mp3")),
+  correct: new Audio(getPath("sounds/correct.mp3")),
+  skip: new Audio(getPath("sounds/skip.mp3")),
+  timeout: new Audio(getPath("sounds/timeout.mp3")),
 };
 
 sounds.bgm.loop = true;
