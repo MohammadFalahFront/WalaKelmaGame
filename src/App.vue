@@ -1,15 +1,17 @@
 <script setup>
 import { ref, reactive, computed } from "vue";
 import { categoriesDB } from "./data.js";
+import confetti from "canvas-confetti";
 
-// --- 1. إعدادات الصوت (تم إلغاء الموسيقى الخلفية) ---
+// --- 1. إعدادات الصوت ---
 const sounds = {
   correct: new Audio("sounds/correct.mp3"),
   skip: new Audio("sounds/skip.mp3"),
   timeout: new Audio("sounds/timeout.mp3"),
+  tick: new Audio("sounds/tick.mp3"),
 };
 
-const isMuted = ref(false); 
+const isMuted = ref(false);
 
 const playEffect = (type) => {
   if (isMuted.value) return;
@@ -19,46 +21,53 @@ const playEffect = (type) => {
   }
 };
 
-// ... المتغيرات السابقة موجودة هنا
-
+const endEffect = (type) => {
+  if (isMuted.value) return;
+  if (type === "tick" && sounds["tick"]) {
+    sounds["tick"].pause();
+    sounds["tick"].currentTime = 0;
+  }
+};
 // --- إعدادات عرض المزيد ---
-const visibleCount = ref(10); // نبدأ بعرض 10 فقط
+const visibleCount = ref(10); 
 
-// مصفوفة محسوبة ترجع فقط العدد المطلوب من التصنيفات
 const visibleCategories = computed(() => {
   return categoriesDB.slice(0, visibleCount.value);
 });
 
-// دالة لزيادة العدد عند الضغط على الزر
 const showMore = () => {
-  visibleCount.value += 10; // عرض 10 إضافية في كل مرة
+  visibleCount.value += 10;
 };
 
 // --- 2. حالة اللعبة ---
-const currentScreen = ref("home"); // home, tutorial, setup, round-start, game, winner
+const currentScreen = ref("home"); 
 const teams = ref([]);
+
+// متغيرات العد التنازلي (جديد)
+const showCountdown = ref(false);
+const countdownValue = ref(3);
 
 const settings = reactive({
   teamsCount: 2,
-  gameMode: "levels", // 'score' or 'levels'
-  timeLimit: 60, // للنمط الكلاسيكي فقط
-  winScore: 30, // للنمط الكلاسيكي فقط
-  maxSkips: 3, // عدد مرات التخطي المسموحة
+  gameMode: "levels", 
+  timeLimit: 60, 
+  winScore: 30, 
+  maxSkips: 3, 
   customNames: ["", "", "", ""],
   selectedCategories: ["colors_shapes"],
 });
 
 const gameState = reactive({
   currentTeamIndex: 0,
-  currentRoundNumber: 1, // رقم الجولة الحالية (لنمط المستويات)
-  currentWordObj: { word: "", hint: "" }, // تم تغييرها لكائن
+  currentRoundNumber: 1, 
+  currentWordObj: { word: "", hint: "" }, 
   timer: 0,
   isPlaying: false,
   isPaused: false,
   timerInterval: null,
-  skipsUsedInTurn: 0, // عدد التخطي المستخدم في الدور الحالي
-  freshWordsPool: [], // كلمات لم تظهر بعد
-  skippedWordsPool: [], // كلمات تم تخطيها (تنتظر إعادة التدوير)
+  skipsUsedInTurn: 0, 
+  freshWordsPool: [], 
+  skippedWordsPool: [], 
 });
 
 // --- دوال التنقل ---
@@ -71,11 +80,9 @@ const goToSetup = () => {
 };
 
 const startGame = () => {
-  // تجميع الكلمات
   let pool = [];
   categoriesDB.forEach((cat) => {
     if (settings.selectedCategories.includes(cat.id)) {
-      // نسخ عميق لتجنب تعديل البيانات الأصلية
       pool = [...pool, ...JSON.parse(JSON.stringify(cat.words))];
     }
   });
@@ -85,11 +92,9 @@ const startGame = () => {
     return;
   }
 
-  // خلط الكلمات
   gameState.freshWordsPool = pool.sort(() => Math.random() - 0.5);
   gameState.skippedWordsPool = [];
 
-  // إعداد الفرق
   teams.value = [];
   for (let i = 0; i < settings.teamsCount; i++) {
     const name = settings.customNames[i].trim() || `الفريق ${i + 1}`;
@@ -97,14 +102,13 @@ const startGame = () => {
   }
 
   gameState.currentTeamIndex = 0;
-  gameState.currentRoundNumber = 1; // البداية دائماً من الجولة 1
+  gameState.currentRoundNumber = 1; 
   startRoundIntro();
 };
 
 const startRoundIntro = () => {
   currentScreen.value = "round-start";
   
-  // تحديد الوقت بناءً على النمط والمستوى
   if (settings.gameMode === 'levels') {
     if (gameState.currentRoundNumber === 3) gameState.timer = 30;
     else gameState.timer = 60;
@@ -116,17 +120,43 @@ const startRoundIntro = () => {
   gameState.skipsUsedInTurn = 0;
 };
 
+// --- التعديل الرئيسي: بدء العد التنازلي قبل اللعب ---
 const playNow = () => {
   currentScreen.value = "game";
+  showCountdown.value = true;
+  countdownValue.value = 3;
+  gameState.isPaused = true; // إيقاف مؤقت حتى ينتهي العد
+  gameState.isPlaying = false; // لم يبدأ اللعب بعد
+
+  const countInterval = setInterval(() => {
+    countdownValue.value--;
+    if (countdownValue.value > 0) {
+    }
+    
+    if (countdownValue.value <= 0) {
+      clearInterval(countInterval);
+      showCountdown.value = false;
+      startActualGame(); // بدء اللعبة فعلياً
+    }
+  }, 1000);
+};
+
+// دالة جديدة لبدء العداد ومنطق اللعب بعد انتهاء العد التنازلي
+const startActualGame = () => {
   gameState.isPlaying = true;
   gameState.isPaused = false;
-  nextWord(); // جلب أول كلمة
+  nextWord(); 
 
   if (gameState.timerInterval) clearInterval(gameState.timerInterval);
 
   gameState.timerInterval = setInterval(() => {
     if (!gameState.isPaused) {
       gameState.timer--;
+
+      if (gameState.timer <= 8 && gameState.timer > 0) {
+         playEffect("tick");
+      }
+
       if (gameState.timer <= 0) endTurn();
     }
   }, 1000);
@@ -136,16 +166,14 @@ const togglePause = () => {
   gameState.isPaused = !gameState.isPaused;
 };
 
-// --- منطق الكلمات الجديد ---
+// --- منطق الكلمات ---
 const nextWord = () => {
-  // الأولوية للكلمات الجديدة
   if (gameState.freshWordsPool.length > 0) {
     gameState.currentWordObj = gameState.freshWordsPool.pop();
   } 
-  // إذا نفدت الجديدة، نستخدم التي تم تخطيها (بعد خلطها)
   else if (gameState.skippedWordsPool.length > 0) {
     gameState.freshWordsPool = gameState.skippedWordsPool.sort(() => Math.random() - 0.5);
-    gameState.skippedWordsPool = []; // تفريغ صندوق التخطي
+    gameState.skippedWordsPool = []; 
     gameState.currentWordObj = gameState.freshWordsPool.pop();
   } 
   else {
@@ -157,25 +185,21 @@ const nextWord = () => {
 };
 
 const handleAnswer = (isCorrect) => {
-  if (gameState.isPaused) return;
+  if (gameState.isPaused || !gameState.isPlaying) return;
 
   if (isCorrect) {
     playEffect("correct");
     teams.value[gameState.currentTeamIndex].score++;
     
-    // شرط الفوز بالنقاط (للنمط الكلاسيكي فقط)
     if (settings.gameMode === 'score' && teams.value[gameState.currentTeamIndex].score >= settings.winScore) {
       endGame();
       return;
     }
-    // ملاحظة: الكلمة الصحيحة لا تعود لأي مصفوفة (تختفي)
   } else {
-    // حالة التخطي
-    if (gameState.skipsUsedInTurn >= settings.maxSkips) return; // حماية إضافية
+    if (gameState.skipsUsedInTurn >= settings.maxSkips) return; 
     
     playEffect("skip");
     gameState.skipsUsedInTurn++;
-    // الكلمة التي تم تخطيها تذهب لصندوق التخطي
     gameState.skippedWordsPool.push(gameState.currentWordObj);
   }
   
@@ -184,17 +208,15 @@ const handleAnswer = (isCorrect) => {
 
 const endTurn = () => {
   playEffect("timeout");
+  endEffect("tick");
   clearInterval(gameState.timerInterval);
   gameState.isPlaying = false;
 
-  // الانتقال للفريق التالي
   gameState.currentTeamIndex = (gameState.currentTeamIndex + 1) % teams.value.length;
 
-  // إذا عادت الدورة للفريق الأول
   if (gameState.currentTeamIndex === 0) {
     if (settings.gameMode === 'levels') {
       gameState.currentRoundNumber++;
-      // إذا انتهت الجولة الثالثة
       if (gameState.currentRoundNumber > 3) {
         endGame();
         return;
@@ -208,13 +230,32 @@ const endTurn = () => {
 const endGame = () => {
   clearInterval(gameState.timerInterval);
   currentScreen.value = "winner";
-  playEffect("correct"); // صوت احتفالي بسيط
+  playEffect("correct"); 
+  launchConfetti(); // تشغيل الاحتفال (جديد)
 };
 
 const resetGame = () => {
   currentScreen.value = "home";
   teams.value = [];
   settings.customNames = ["", "", "", ""];
+};
+
+// دالة إطلاق الاحتفال (جديد)
+const launchConfetti = () => {
+  var duration = 3 * 1000;
+  var animationEnd = Date.now() + duration;
+  var defaults = { startVelocity: 30, spread: 360, ticks: 60, zIndex: 0 };
+
+  var interval = setInterval(function() {
+    var timeLeft = animationEnd - Date.now();
+
+    if (timeLeft <= 0) {
+      return clearInterval(interval);
+    }
+
+    var particleCount = 50 * (timeLeft / duration);
+    confetti(Object.assign({}, defaults, { particleCount, origin: { x: Math.random(), y: Math.random() - 0.2 } }));
+  }, 250);
 };
 
 const toggleCategory = (catId) => {
@@ -228,13 +269,11 @@ const toggleCategory = (catId) => {
 const currentTeamName = computed(() => teams.value.length ? teams.value[gameState.currentTeamIndex].name : "");
 const winnerTeam = computed(() => teams.value.sort((a, b) => b.score - a.score)[0]);
 
-// هل التلميح مسموح؟ (فقط في المستوى 1 من نمط المستويات)
 const isHintAllowed = computed(() => {
   if (settings.gameMode === 'levels' && gameState.currentRoundNumber === 1) return true;
   return false;
 });
 
-// نصوص شرح المستوى
 const levelDescription = computed(() => {
   if (settings.gameMode !== 'levels') return '';
   if (gameState.currentRoundNumber === 1) return '🔥 الجولة 1: 60 ثانية + تلميحات';
@@ -242,6 +281,7 @@ const levelDescription = computed(() => {
   if (gameState.currentRoundNumber === 3) return '🚀 الجولة 3: 30 ثانية (سرعة قصوى)';
   return '';
 });
+
 </script>
 
 <template>
@@ -315,8 +355,7 @@ const levelDescription = computed(() => {
           </div>
         </div>
 
-        <label style="margin-top: 15px">التصنيفات</label>
-       <label style="margin-top: 15px">التصنيفات ({{ settings.selectedCategories.length }})</label>
+        <label style="margin-top: 15px">التصنيفات ({{ settings.selectedCategories.length }})</label>
         
         <div class="categories-grid">
           <div
@@ -375,13 +414,26 @@ const levelDescription = computed(() => {
       </div>
 
       <div v-else-if="currentScreen === 'game'" class="game-card game-play-card" key="game">
+        
+        <div v-if="showCountdown" class="countdown-overlay">
+           <div class="countdown-number">{{ countdownValue }}</div>
+        </div>
+
         <div class="top-controls">
           <button class="icon-btn" @click="togglePause" :class="{ active: gameState.isPaused }">
             {{ gameState.isPaused ? "▶️" : "⏸️" }}
           </button>
           
-          <div class="timer-box" :class="{ 'low-time': gameState.timer < 10, 'fast-mode': gameState.timer < 30 && settings.gameMode === 'levels' && gameState.currentRoundNumber === 3 }">
-            {{ gameState.timer }}
+          <div class="timer-container">
+            <svg class="timer-svg" viewBox="0 0 100 100">
+              <circle cx="50" cy="50" r="45" class="timer-bg"></circle>
+              <circle cx="50" cy="50" r="45" class="timer-progress"
+                :stroke-dasharray="283"
+                :stroke-dashoffset="283 - (283 * gameState.timer) / (settings.gameMode === 'levels' ? (gameState.currentRoundNumber === 3 ? 30 : 60) : settings.timeLimit)"
+                :class="{ 'urgent': gameState.timer <= 10 }">
+              </circle>
+            </svg>
+            <div class="timer-text">{{ gameState.timer }}</div>
           </div>
           
           <div class="skips-counter">
@@ -399,17 +451,17 @@ const levelDescription = computed(() => {
         </div>
 
         <div class="actions-area">
-          <button @click="handleAnswer(true)" class="btn btn-success" :disabled="gameState.isPaused">
+          <button @click="handleAnswer(true)" class="btn btn-success" :disabled="gameState.isPaused || showCountdown">
             ✅ عرفوها!
           </button>
           
           <button @click="handleAnswer(false)" class="btn btn-danger" 
-            :disabled="gameState.isPaused || gameState.skipsUsedInTurn >= settings.maxSkips">
+            :disabled="gameState.isPaused || showCountdown || gameState.skipsUsedInTurn >= settings.maxSkips">
             ⏭️ تخطي
           </button>
         </div>
 
-        <div v-if="gameState.isPaused" class="paused-overlay">
+        <div v-if="gameState.isPaused && !showCountdown" class="paused-overlay">
           <h2>⏸️ استراحة</h2>
           <button @click="togglePause" class="btn btn-primary">استئناف</button>
         </div>
@@ -433,170 +485,3 @@ const levelDescription = computed(() => {
     </Transition>
   </div>
 </template>
-<style>
-/* CSS Variables & Global Styles from previous answer remains, adding updates */
-
-/* تحسينات الريسبونسف والهواتف */
-.app-container {
-    width: 100%;
-    height: 100vh;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    padding: 15px; /* مسافة من الحواف للهواتف */
-    box-sizing: border-box;
-}
-
-.game-card {
-  width: 100%;
-  max-width: 450px; /* عرض مناسب للهاتف */
-  background: rgba(30, 41, 59, 0.9);
-  backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  padding: 1.5rem;
-  border-radius: 20px;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
-  text-align: center;
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  max-height: 90vh; /* منع تجاوز ارتفاع الشاشة */
-  overflow-y: auto;
-}
-
-/* Tutorial Styles */
-.tutorial-steps {
-  text-align: right;
-  background: rgba(0,0,0,0.2);
-  padding: 15px;
-  border-radius: 12px;
-  margin: 15px 0;
-}
-.step {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  margin-bottom: 10px;
-}
-.step span { font-size: 1.2rem; }
-.step p { margin: 0; font-size: 0.95rem; color: #e2e8f0; line-height: 1.5; }
-.btn-outline {
-  background: transparent;
-  border: 2px solid var(--primary);
-  color: var(--primary);
-  margin-top: 10px;
-}
-
-/* Mode Selector */
-.mode-selector {
-  display: flex;
-  gap: 10px;
-  margin-bottom: 15px;
-}
-.mode-option {
-  flex: 1;
-  background: rgba(255,255,255,0.05);
-  border: 2px solid transparent;
-  padding: 10px;
-  border-radius: 10px;
-  cursor: pointer;
-  font-size: 0.9rem;
-  transition: 0.3s;
-}
-.mode-option.selected {
-  border-color: var(--primary);
-  background: rgba(99, 102, 241, 0.2);
-  color: white;
-}
-
-/* Names Grid */
-.names-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 10px;
-    margin-bottom: 15px;
-}
-.names-grid .input-group { margin-bottom: 0; }
-
-/* Settings Row */
-.settings-row {
-  display: flex;
-  gap: 10px;
-  margin-top: 15px;
-}
-.setting-item {
-  flex: 1;
-  text-align: right;
-}
-.setting-item input { text-align: center; }
-
-/* Level Badge */
-.level-badge {
-  background: linear-gradient(45deg, #f59e0b, #d97706);
-  color: black;
-  font-weight: bold;
-  padding: 8px 15px;
-  border-radius: 20px;
-  display: inline-block;
-  margin: 10px 0 20px;
-  box-shadow: 0 4px 15px rgba(245, 158, 11, 0.4);
-  animation: pulse 2s infinite;
-}
-
-@keyframes pulse {
-  0% { transform: scale(1); }
-  50% { transform: scale(1.05); }
-  100% { transform: scale(1); }
-}
-
-/* Hint Box */
-.hint-box {
-  background: rgba(255, 255, 200, 0.1);
-  border: 1px dashed rgba(255, 255, 200, 0.3);
-  color: #fef08a;
-  padding: 10px;
-  border-radius: 10px;
-  margin-top: 15px;
-  font-size: 1rem;
-  animation: popIn 0.5s ease;
-}
-
-/* Skips Counter */
-.skips-counter {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  font-size: 0.8rem;
-  color: var(--text-muted);
-}
-.skip-val {
-  font-size: 1.2rem;
-  font-weight: bold;
-  color: var(--danger);
-}
-
-/* Responsive adjustments */
-@media (max-height: 700px) {
-  .word-display { font-size: 2.5rem; margin: 15px 0; }
-  .timer-box { width: 60px; height: 60px; font-size: 1.5rem; }
-  h1 { font-size: 2rem; }
-}
-
-.btn-show-more {
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  color: var(--text-muted);
-  padding: 8px 20px;
-  border-radius: 20px;
-  cursor: pointer;
-  font-family: inherit;
-  font-size: 0.9rem;
-  transition: 0.3s;
-}
-
-.btn-show-more:hover {
-  background: rgba(255, 255, 255, 0.2);
-  color: white;
-  border-color: white;
-}
-</style>
