@@ -154,7 +154,6 @@ input:focus, select:focus {
   font-family: inherit;
   margin-top: 10px;
   position: relative;
-  overflow: hidden;
 }
 
 .btn-primary {
